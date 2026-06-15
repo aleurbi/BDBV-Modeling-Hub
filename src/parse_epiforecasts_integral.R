@@ -1,39 +1,32 @@
 #!/usr/bin/env Rscript
 #
-# Parse epiforecasts/BVDOutbreakSize release estimates into hubverse
-# submission files for the BVBD Modeling Hub.
+# Parse epiforecasts/BVDOutbreakSize INTEGRAL-model release estimates into
+# hubverse submission files for the BVBD Modeling Hub (model epiforecasts-integral).
 #
 # The upstream repository (https://github.com/epiforecasts/BVDOutbreakSize)
-# publishes a series of tagged `results-v*` releases. Each release attaches a
-# `posterior_draws.csv` (the posterior sample for that vintage) and an
-# `observations.toml` (recording the data cut-off in `as_of_date`). The
-# headline cumulative outbreak-size posterior lives in one column of the draws
-# file: `cumulative_cases` for the early "integral" model, and `C_T` for the
-# later discrete-time "renewal" model.
+# published a series of tagged `results-v*` releases. The early "integral" model
+# vintages are parsed here; the later "renewal" model is handled by a separate
+# script (src/parse_epiforecasts_renewal.R).
 #
-# IMPORTANT - target semantics. The hub target ("cumulative cases") is the
-# cumulative number of *symptomatic* cases, explicitly NOT underlying
-# infections and NOT confirmed-only counts (see hub-config/tasks.json).
-#   * integral `cumulative_cases` IS cumulative symptomatic cases: the
-#     integral posterior_summary.csv reports `cumulative_cases` and
-#     `cumulative_infections` as distinct quantities, with cases < infections.
-#     This maps cleanly onto the hub target.
-#   * renewal `C_T` is `cumsum(infections)[n]`, i.e. cumulative *infections*
-#     (see src/models/priors.jl in the upstream repo). The renewal release
-#     assets publish no symptomatic-case quantity, so the renewal submission
-#     reports infections as a documented stand-in. This deviation from the
-#     symptomatic-case target is recorded in the renewal model metadata.
+# Each release attaches a `posterior_draws.csv` (the posterior sample for that
+# vintage) and an `observations.toml` (recording the data cut-off in
+# `as_of_date`). The integral model's headline cumulative outbreak-size
+# posterior is the `cumulative_cases` column of the draws file.
+#
+# Target semantics. The hub target ("cumulative cases") is the cumulative
+# number of *symptomatic* cases, explicitly NOT underlying infections and NOT
+# confirmed-only counts (see hub-config/tasks.json). The integral model reports
+# outbreak size as a single coarse exponential-growth quantity that the authors
+# label `cumulative_cases`; this is the value intended to map onto the hub
+# target. (The integral model does not separately resolve infections vs symptom
+# onsets the way the later renewal model does.)
 #
 # This script downloads the relevant release assets, computes the quantiles,
 # median and mean required by the hub directly from the posterior draws, and
-# writes one hubverse model-output CSV per (reference_date, model).
-#
-# Two hub models are produced:
-#   * epiforecasts-integral  (vintages prior to the renewal model)
-#   * epiforecasts-renewal   (the renewal-model vintage)
+# writes one hubverse model-output CSV per integral vintage.
 #
 # Usage (from the hub root):
-#   Rscript src/parse_epiforecasts_estimates.R
+#   Rscript src/parse_epiforecasts_integral.R
 #
 # Requires the `gh` CLI to be installed and authenticated, plus the base R
 # packages `utils` and `stats` (no extra package dependencies).
@@ -56,23 +49,17 @@ QUANTILE_LEVELS <- c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975)
 TARGET <- "cumulative cases"
 LOCATION <- "CD"
 TEAM_ABBR <- "epiforecasts"
+MODEL_ABBR <- "integral"
+MODEL_ID <- paste0(TEAM_ABBR, "-", MODEL_ABBR)
 
-## The releases to parse. One row per submission file.
-##   tag         - upstream release tag carrying the posterior_draws.csv asset
-##   model       - hub model name (directory suffix); also selects the draws column
-##   draws_col   - column of posterior_draws.csv holding the headline posterior
-##   quantity    - what draws_col represents, relative to the hub target
-##
+## The integral posterior-draws column carrying the headline outbreak-size
+## posterior (cumulative symptomatic cases, per the target semantics above).
+DRAWS_COL <- "cumulative_cases"
+
+## The integral-model releases to parse. One row per submission file.
 ## For 2026-05-18 the upstream repo published two integral vintages
 ## (results-v1.0.0 and results-v1.1.0); we use the later revision v1.1.0.
-RELEASES <- data.frame(
-  tag = c("results-v1.1.0", "results-v1.2.0", "results-v1.3.0", "results-v1.4.0"),
-  model = c("integral", "integral", "integral", "renewal"),
-  draws_col = c("cumulative_cases", "cumulative_cases", "cumulative_cases", "C_T"),
-  quantity = c("symptomatic cases", "symptomatic cases", "symptomatic cases",
-               "infections (stand-in for symptomatic cases)"),
-  stringsAsFactors = FALSE
-)
+RELEASE_TAGS <- c("results-v1.1.0", "results-v1.2.0", "results-v1.3.0")
 
 ## ---------------------------------------------------------------------------
 ## Helpers
@@ -151,17 +138,12 @@ hub_root <- if (!is.na(script_path)) {
   normalizePath(getwd())
 }
 
-tmp <- tempfile("bvd_releases_")
+tmp <- tempfile("bvd_integral_")
 dir.create(tmp)
 on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
 
-for (i in seq_len(nrow(RELEASES))) {
-  tag <- RELEASES$tag[i]
-  model <- RELEASES$model[i]
-  draws_col <- RELEASES$draws_col[i]
-  model_id <- paste0(TEAM_ABBR, "-", model)
-
-  message(sprintf("Processing %s (%s) ...", tag, model_id))
+for (tag in RELEASE_TAGS) {
+  message(sprintf("Processing %s (%s) ...", tag, MODEL_ID))
   rel_dir <- file.path(tmp, tag)
   dir.create(rel_dir, showWarnings = FALSE)
 
@@ -171,23 +153,22 @@ for (i in seq_len(nrow(RELEASES))) {
   reference_date <- read_as_of_date(obs_path)
 
   draws_df <- utils::read.csv(draws_path, check.names = FALSE)
-  if (!draws_col %in% names(draws_df)) {
+  if (!DRAWS_COL %in% names(draws_df)) {
     stop(sprintf("column '%s' not found in posterior_draws.csv for %s",
-                 draws_col, tag))
+                 DRAWS_COL, tag))
   }
-  draws <- draws_df[[draws_col]]
+  draws <- draws_df[[DRAWS_COL]]
 
   submission <- build_submission(reference_date, draws)
 
-  out_dir <- file.path(hub_root, "model-output", model_id)
+  out_dir <- file.path(hub_root, "model-output", MODEL_ID)
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
   out_file <- file.path(out_dir,
-                        sprintf("%s-%s.csv", reference_date, model_id))
+                        sprintf("%s-%s.csv", reference_date, MODEL_ID))
   utils::write.csv(submission, out_file, row.names = FALSE, quote = FALSE)
 
-  message(sprintf("  -> wrote %s (%d draws, median %s, quantity: %s)",
-                  out_file, length(draws), round(median(draws)),
-                  RELEASES$quantity[i]))
+  message(sprintf("  -> wrote %s (%d draws, median %s, quantity: symptomatic cases)",
+                  out_file, length(draws), round(median(draws))))
 }
 
 message("Done.")
