@@ -15,7 +15,7 @@ model_contributors: [
 ]
 website_url: "https://www.imperial.ac.uk/mrc-global-infectious-disease-analysis/"
 repo_url: "https://github.com/mrc-ide/evd-2026-outbreak-size"
-license: "CC-BY-4.0"
+license: "CC0-1.0"
 citation: "McCabe R, Ebbarnezh L, Okware S, et al. Estimation of the Ebola outbreak size in the Democratic Republic of the Congo. Lancet Infect Dis 2026. https://doi.org/10.1016/S1473-3099(26)00299-9"
 model_details:
   data_inputs: "240 suspected and confirmed Bundibugyo virus disease deaths reported as of 27 May 2026 (Institut National de Sante Publique, DRC situation reports); case fatality ratio and symptom-onset-to-death distribution derived from previous Bundibugyo virus outbreaks (Rosello et al. 2015; US CDC)."
