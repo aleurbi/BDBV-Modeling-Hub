@@ -14,11 +14,11 @@
     "file_format": ["csv"],
     "timezone": "Africa/Kinshasa",
     "cloud": {
-        "enabled": false,
+        "enabled": true,
         "host": {
             "name": "aws",
             "storage_service": "s3",
-            "storage_location": "hub-template"
+            "storage_location": "bdbv-modeling-hub"
         }
     }
 }
