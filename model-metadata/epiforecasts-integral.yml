@@ -6,7 +6,8 @@ model_contributors: [
   {
     "name": "Sam Abbott",
     "affiliation": "London School of Hygiene & Tropical Medicine",
-    "orcid": "0000-0001-8057-8037"
+    "orcid": "0000-0001-8057-8037",
+    "email": "sam.abbott@lshtm.ac.uk"
   },
   {
     "name": "Katharine Sherratt",
@@ -19,7 +20,8 @@ model_contributors: [
   {
     "name": "Sebastian Funk",
     "affiliation": "London School of Hygiene & Tropical Medicine",
-    "orcid": "0000-0002-2842-3406"
+    "orcid": "0000-0002-2842-3406",
+    "email": "sebastian.funk@lshtm.ac.uk"
   }
 ]
 license: "CC-BY-4.0"
