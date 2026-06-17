@@ -28,6 +28,11 @@ on:
         description: "Upstream release tag to parse (blank = latest)"
         required: false
         default: ""
+      force:
+        description: "Overwrite an existing submission for the same reference_date"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -55,9 +60,23 @@ jobs:
       - name: Generate renewal model-output
         run: |
           set -euo pipefail
-          Rscript src/parse_epiforecasts_renewal.R "${{ github.event.inputs.release_tag }}"
+          Rscript src/parse_epiforecasts_renewal.R "${{ inputs.release_tag }}" ${{ inputs.force && '--force' || '' }}
+
+      # The parser skips writing when the data cut-off (reference_date) has not
+      # advanced, so "no file change" means there is nothing new to submit.
+      - name: Detect changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain model-output/epiforecasts-renewal)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No new data cut-off; nothing to submit."
+          fi
 
       - name: Ensure reference_date is allowed in tasks.json
+        if: steps.changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           # The latest (max) reference_date among the generated renewal files.
@@ -81,6 +100,7 @@ jobs:
           fi
 
       - name: Open refresh pull request
+        if: steps.changes.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           # token: ${{ secrets.REFRESH_PAT }}  # uncomment to let the PR trigger CI
