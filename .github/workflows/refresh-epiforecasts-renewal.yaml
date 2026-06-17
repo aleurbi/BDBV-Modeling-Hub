@@ -5,7 +5,7 @@
 # to hub-config/tasks.json if needed, and opens a pull request with the result.
 # Validation runs on that PR via the existing validate-submission workflow.
 #
-# DRAFT - review before enabling. Notable caveats:
+# Notable caveats:
 #   * PRs opened with the default GITHUB_TOKEN do NOT trigger other workflows
 #     (so validate-submission would not auto-run). To get validation to run on
 #     the refresh PR, provide a Personal Access Token (or GitHub App token) as a
