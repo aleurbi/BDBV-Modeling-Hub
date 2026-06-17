@@ -68,12 +68,12 @@ jobs:
           fi
           echo "Latest renewal reference_date: ${ref_date}"
           if ! jq -e --arg d "$ref_date" \
-              '.rounds[0].model_tasks[0].task_ids.reference_date.optional | index($d)' \
+              '.rounds[] | select(.round_id == "reference_date") | .model_tasks[] | .task_ids.reference_date.optional | index($d)' \
               hub-config/tasks.json > /dev/null; then
             echo "Adding ${ref_date} to allowed reference dates."
             tmp="$(mktemp)"
             jq --arg d "$ref_date" \
-              '(.rounds[0].model_tasks[0].task_ids.reference_date.optional) |= (. + [$d] | unique)' \
+              '(.rounds[] | select(.round_id == "reference_date") | .model_tasks[] | .task_ids.reference_date.optional) |= (. + [$d] | unique)' \
               hub-config/tasks.json > "$tmp"
             mv "$tmp" hub-config/tasks.json
           else
