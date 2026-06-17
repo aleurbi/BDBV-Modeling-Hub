@@ -1,0 +1,99 @@
+# Refresh the epiforecasts-renewal model-output from the latest upstream build.
+#
+# This re-runs src/parse_epiforecasts_renewal.R against the most recent
+# epiforecasts/BVDOutbreakSize `results-*` release, adds the new reference_date
+# to hub-config/tasks.json if needed, and opens a pull request with the result.
+# Validation runs on that PR via the existing validate-submission workflow.
+#
+# DRAFT - review before enabling. Notable caveats:
+#   * PRs opened with the default GITHUB_TOKEN do NOT trigger other workflows
+#     (so validate-submission would not auto-run). To get validation to run on
+#     the refresh PR, provide a Personal Access Token (or GitHub App token) as a
+#     secret and pass it to the checkout + create-pull-request steps below
+#     (see the `token:` lines). With the default token the PR is still created;
+#     you just have to re-run checks manually or push an empty commit.
+#   * Metadata (model-metadata/epiforecasts-renewal.yml, incl. model_version) is
+#     NOT auto-updated here - only the model-output CSV and the allowed dates.
+#   * The upstream releases are public, so the default token can read them.
+
+name: Refresh epiforecasts-renewal
+
+on:
+  # Daily; adjust or remove as needed. Times are UTC.
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Upstream release tag to parse (blank = latest)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      # Used by `gh release download` inside the parser to read the public
+      # upstream releases. Swap for a PAT secret if you want the resulting PR
+      # to trigger the validation workflows (see caveat above).
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout hub
+        uses: actions/checkout@v4
+        # token: ${{ secrets.REFRESH_PAT }}   # uncomment to let the PR trigger CI
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          # The parser uses only base R (utils, stats) - no package install.
+          use-public-rspm: true
+
+      - name: Generate renewal model-output
+        run: |
+          set -euo pipefail
+          Rscript src/parse_epiforecasts_renewal.R "${{ github.event.inputs.release_tag }}"
+
+      - name: Ensure reference_date is allowed in tasks.json
+        run: |
+          set -euo pipefail
+          # The latest (max) reference_date among the generated renewal files.
+          ref_date="$(ls model-output/epiforecasts-renewal \
+            | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}' | sort -u | tail -n1)"
+          echo "Latest renewal reference_date: ${ref_date}"
+          if ! jq -e --arg d "$ref_date" \
+              '.rounds[0].model_tasks[0].task_ids.reference_date.optional | index($d)' \
+              hub-config/tasks.json > /dev/null; then
+            echo "Adding ${ref_date} to allowed reference dates."
+            tmp="$(mktemp)"
+            jq --arg d "$ref_date" \
+              '(.rounds[0].model_tasks[0].task_ids.reference_date.optional) |= (. + [$d] | unique)' \
+              hub-config/tasks.json > "$tmp"
+            mv "$tmp" hub-config/tasks.json
+          else
+            echo "${ref_date} already allowed; no tasks.json change."
+          fi
+
+      - name: Open refresh pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          # token: ${{ secrets.REFRESH_PAT }}  # uncomment to let the PR trigger CI
+          branch: auto/epiforecasts-renewal-refresh
+          delete-branch: true
+          commit-message: "Refresh epiforecasts-renewal model output"
+          title: "Refresh epiforecasts-renewal model output"
+          body: |
+            Automated refresh of the `epiforecasts-renewal` model output from
+            the latest `epiforecasts/BVDOutbreakSize` results release, generated
+            by `src/parse_epiforecasts_renewal.R`.
+
+            - Updates `model-output/epiforecasts-renewal/` with the current vintage.
+            - Adds the new `reference_date` to `hub-config/tasks.json` if needed.
+
+            Metadata is not auto-updated; review before merging.
+          labels: |
+            automated
+            epiforecasts-renewal
